@@ -1,8 +1,6 @@
 "use client";
 
 type PromptEditorProps = {
-  behaviorDescription: string;
-  onBehaviorChange: (v: string) => void;
   systemPrompt: string;
   onSystemPromptChange: (v: string) => void;
   testInputs: string[];
@@ -14,8 +12,6 @@ type PromptEditorProps = {
 };
 
 export function PromptEditor({
-  behaviorDescription,
-  onBehaviorChange,
   systemPrompt,
   onSystemPromptChange,
   testInputs,
@@ -28,19 +24,6 @@ export function PromptEditor({
   return (
     <div className="flex flex-col gap-4">
       {emptyStateSlot}
-
-      <div>
-        <label className="mb-1 block text-sm font-medium text-zinc-300">
-          Behavior description
-        </label>
-        <textarea
-          value={behaviorDescription}
-          onChange={(e) => onBehaviorChange(e.target.value)}
-          placeholder="What should the model do? (plain English)"
-          rows={3}
-          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
-        />
-      </div>
 
       <div>
         <label className="mb-1 block text-sm font-medium text-zinc-300">

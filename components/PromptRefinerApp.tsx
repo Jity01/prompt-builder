@@ -8,14 +8,11 @@ import { VersionHistory } from "@/components/VersionHistory";
 import { aggregateFeedbackForVersion } from "@/lib/score";
 import type { PromptVersion, RefineApiResponse, TestRun } from "@/lib/types";
 
-const EXAMPLE_BEHAVIOR =
-  "Answer briefly in bullet points. Stay factual; say when unsure.";
 const EXAMPLE_PROMPT =
-  "You are a helpful assistant. Respond clearly and cite uncertainty.";
+  "You are a helpful assistant. Answer briefly in bullet points. Stay factual; say when unsure.";
 const EXAMPLE_INPUT = "What causes rainbows?";
 
 export function PromptRefinerApp() {
-  const [behaviorDescription, setBehaviorDescription] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [testInputs, setTestInputs] = useState<string[]>([""]);
   const [promptVersionId, setPromptVersionId] = useState(() =>
@@ -39,7 +36,6 @@ export function PromptRefinerApp() {
 
   const showEmptyHint =
     testRuns.length === 0 &&
-    !behaviorDescription.trim() &&
     !systemPrompt.trim() &&
     testInputs.every((t) => !t.trim());
 
@@ -143,7 +139,6 @@ export function PromptRefinerApp() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          behaviorDescription,
           currentPrompt: systemPrompt,
           feedback,
         }),
@@ -165,7 +160,7 @@ export function PromptRefinerApp() {
     } finally {
       setRefineLoading(false);
     }
-  }, [behaviorDescription, systemPrompt, testRuns]);
+  }, [systemPrompt, testRuns]);
 
   const handleApplyDiff = useCallback(() => {
     if (!refineResult) return;
@@ -191,7 +186,6 @@ export function PromptRefinerApp() {
   }, []);
 
   const fillExample = useCallback(() => {
-    setBehaviorDescription(EXAMPLE_BEHAVIOR);
     setSystemPrompt(EXAMPLE_PROMPT);
     setTestInputs([EXAMPLE_INPUT]);
   }, []);
@@ -200,11 +194,7 @@ export function PromptRefinerApp() {
     <div className="rounded-lg border border-dashed border-zinc-600 bg-zinc-900/50 p-4 text-sm text-zinc-400">
       <p className="mb-2 font-medium text-zinc-300">Get started</p>
       <p className="mb-3">
-        Example behavior:{" "}
-        <span className="text-zinc-300">{EXAMPLE_BEHAVIOR}</span>
-      </p>
-      <p className="mb-3">
-        Example prompt:{" "}
+        Example system prompt:{" "}
         <span className="font-mono text-xs text-zinc-300">
           {EXAMPLE_PROMPT}
         </span>
@@ -238,8 +228,6 @@ export function PromptRefinerApp() {
         </header>
 
         <PromptEditor
-          behaviorDescription={behaviorDescription}
-          onBehaviorChange={setBehaviorDescription}
           systemPrompt={systemPrompt}
           onSystemPromptChange={setSystemPrompt}
           testInputs={testInputs}

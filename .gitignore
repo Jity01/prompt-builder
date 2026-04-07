@@ -30,6 +30,3 @@ yarn-error.log*
 # env
 .env
 .env*.local
-
-# typescript
-next-env.d.ts

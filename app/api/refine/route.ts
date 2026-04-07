@@ -1,9 +1,11 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-const META_SYSTEM = `You are a prompt engineering assistant. The user is trying to get an LLM to behave a certain way.
+const META_SYSTEM = `You are a prompt engineering assistant. The user is refining an LLM system prompt using test outputs and ratings.
 
-You will receive JSON in the user message with keys: behaviorDescription, currentPrompt, feedback (array of { input, output, rating, reason }).
+You will receive JSON in the user message with keys: currentPrompt, feedback (array of { input, output, rating, reason }).
+
+The user's goals and constraints should be inferred from the current system prompt text and from the test feedback (what worked vs what failed).
 
 Your job:
 1. Identify what the prompt is getting wrong based on the bad feedback (and preserve what works from good feedback).
@@ -30,7 +32,6 @@ export async function POST(req: Request) {
   }
 
   let body: {
-    behaviorDescription?: string;
     currentPrompt?: string;
     feedback?: {
       input: string;
@@ -45,7 +46,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const behaviorDescription = body.behaviorDescription ?? "";
   const currentPrompt = body.currentPrompt ?? "";
   const feedback = Array.isArray(body.feedback) ? body.feedback : [];
   if (feedback.length === 0) {
@@ -55,7 +55,6 @@ export async function POST(req: Request) {
   const client = new OpenAI({ apiKey: key });
 
   const userPayload = JSON.stringify({
-    behaviorDescription,
     currentPrompt,
     feedback,
   });
