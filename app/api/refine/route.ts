@@ -1,0 +1,102 @@
+import OpenAI from "openai";
+import { NextResponse } from "next/server";
+
+const META_SYSTEM = `You are a prompt engineering assistant. The user is trying to get an LLM to behave a certain way.
+
+You will receive JSON in the user message with keys: behaviorDescription, currentPrompt, feedback (array of { input, output, rating, reason }).
+
+Your job:
+1. Identify what the prompt is getting wrong based on the bad feedback (and preserve what works from good feedback).
+2. Suggest a minimal, targeted edit to the system prompt.
+3. Return JSON only, no prose outside the JSON. Use this exact shape:
+{
+  "newPrompt": "string — full replacement system prompt",
+  "explanation": "1–2 sentences on what changed and why",
+  "diffs": [
+    { "type": "unchanged" | "removed" | "added", "text": "string (line or chunk)" }
+  ]
+}
+
+Only make the smallest change necessary. Preserve everything that's working.
+Build diffs as a reasonable line-level sequence so the UI can color added (green) vs removed (red) vs unchanged.`;
+
+export async function POST(req: Request) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    return NextResponse.json(
+      { error: "OPENAI_API_KEY is not configured on the server." },
+      { status: 500 },
+    );
+  }
+
+  let body: {
+    behaviorDescription?: string;
+    currentPrompt?: string;
+    feedback?: {
+      input: string;
+      output: string;
+      rating: "good" | "bad";
+      reason: string;
+    }[];
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const behaviorDescription = body.behaviorDescription ?? "";
+  const currentPrompt = body.currentPrompt ?? "";
+  const feedback = Array.isArray(body.feedback) ? body.feedback : [];
+  if (feedback.length === 0) {
+    return NextResponse.json({ error: "At least one feedback item is required." }, { status: 400 });
+  }
+
+  const client = new OpenAI({ apiKey: key });
+
+  const userPayload = JSON.stringify({
+    behaviorDescription,
+    currentPrompt,
+    feedback,
+  });
+
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: META_SYSTEM },
+        { role: "user", content: userPayload },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const raw = response.choices[0]?.message?.content;
+    if (!raw) {
+      return NextResponse.json({ error: "Empty model response." }, { status: 502 });
+    }
+
+    const parsed = JSON.parse(raw) as {
+      newPrompt?: string;
+      explanation?: string;
+      diffs?: { type: string; text: string }[];
+    };
+
+    if (!parsed.newPrompt || !parsed.explanation || !Array.isArray(parsed.diffs)) {
+      return NextResponse.json({ error: "Model returned invalid JSON shape." }, { status: 502 });
+    }
+
+    const diffs = parsed.diffs.map((d) => ({
+      type: d.type as "added" | "removed" | "unchanged",
+      text: String(d.text ?? ""),
+    }));
+
+    return NextResponse.json({
+      newPrompt: parsed.newPrompt,
+      explanation: parsed.explanation,
+      diffs,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "OpenAI request failed.";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+}
