@@ -7,6 +7,9 @@ import { TestRunner } from "@/components/TestRunner";
 import { VersionHistory } from "@/components/VersionHistory";
 import { aggregateFeedbackForVersion } from "@/lib/score";
 import type {
+  AutoRefineResponse,
+  AutomationState,
+  PromptRefinePhase,
   PromptVersion,
   RefineApiResponse,
   TestInputRow,
@@ -43,6 +46,16 @@ export function PromptRefinerApp() {
   const [refineError, setRefineError] = useState<string | null>(null);
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<PromptRefinePhase>("auto_critic");
+  const [automationState, setAutomationState] = useState<AutomationState>("idle");
+  const [threshold, setThreshold] = useState(0.8);
+  const [maxIterations, setMaxIterations] = useState(5);
+  const [autoStatus, setAutoStatus] = useState<string | null>(null);
+  const [autoError, setAutoError] = useState<string | null>(null);
+  const [autoScoreTrend, setAutoScoreTrend] = useState<number[]>([]);
+  const [autoIteration, setAutoIteration] = useState(0);
+  const [autoAbortController, setAutoAbortController] =
+    useState<AbortController | null>(null);
 
   const runAllDisabled =
     !systemPrompt.trim() || !testInputs.some((i) => i.value.trim());
@@ -57,6 +70,13 @@ export function PromptRefinerApp() {
 
   const hasSubmittedFeedback = useMemo(
     () => testRuns.some((r) => r.feedbackSubmitted),
+    [testRuns],
+  );
+  const hasExpectedRuns = useMemo(
+    () =>
+      testRuns.some(
+        (r) => !r.loading && !r.error && r.expectedOutput && r.expectedOutput.trim(),
+      ),
     [testRuns],
   );
 
@@ -152,6 +172,8 @@ export function PromptRefinerApp() {
     setTestRuns(initialRuns);
     setRefineResult(null);
     setRefineError(null);
+    setAutoError(null);
+    setAutoStatus(null);
 
     const nextRuns = [...initialRuns];
     for (let i = 0; i < nextRuns.length; i++) {
@@ -270,7 +292,130 @@ export function PromptRefinerApp() {
     setPromptVersionId(crypto.randomUUID());
     setRefineResult(null);
     setRefineError(null);
+    setPhase("manual_refine");
   }, [promptVersionId, refineResult, systemPrompt, testRuns]);
+
+  const handleStartAutoRefine = useCallback(async () => {
+    const runsForAuto = testRuns
+      .filter((r) => !r.loading && !r.error && r.expectedOutput?.trim())
+      .map((r) => ({
+        input: r.input,
+        output: r.output,
+        expectedOutput: r.expectedOutput!,
+      }));
+    if (!systemPrompt.trim() || runsForAuto.length === 0) return;
+
+    const controller = new AbortController();
+    setAutoAbortController(controller);
+    setAutomationState("running");
+    setAutoError(null);
+    setAutoStatus("Running auto-refine…");
+    setAutoScoreTrend([]);
+    setAutoIteration(0);
+
+    try {
+      const res = await fetch("/api/auto-refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          taskDescription: taskDescription.trim(),
+          currentPrompt: systemPrompt,
+          runs: runsForAuto,
+          threshold,
+          maxIterations,
+        }),
+      });
+      const data = (await res.json()) as
+        | AutoRefineResponse
+        | { error?: string; partial?: Partial<AutoRefineResponse> };
+
+      if (!res.ok) {
+        const partial = "partial" in data ? data.partial : undefined;
+        const errorMessage =
+          "error" in data ? data.error : undefined;
+        if (partial?.finalPrompt) {
+          setSystemPrompt(partial.finalPrompt);
+        }
+        setAutoError(errorMessage ?? `Auto-refine failed (${res.status})`);
+        setAutomationState("stopped");
+        setPhase("manual_refine");
+        return;
+      }
+
+      const success = data as AutoRefineResponse;
+      const trend = success.iterations.map((it) => it.aggregateScore);
+      setAutoScoreTrend(trend);
+      setAutoIteration(success.iterations.length);
+      setAutoStatus(
+        success.status === "threshold_met"
+          ? "Auto-refine reached threshold. Handoff to manual refinement."
+          : success.status === "cancelled"
+            ? "Auto-refine cancelled."
+            : "Auto-refine reached max iterations.",
+      );
+
+      const latest = success.iterations[success.iterations.length - 1];
+      if (latest) {
+        setTestRuns((runs) =>
+          runs.map((r) => {
+            const match = latest.runFeedback.find(
+              (f) => f.input === r.input && f.output === r.output,
+            );
+            return match
+              ? {
+                  ...r,
+                  autoScore: match.score,
+                  autoMismatchReasons: match.mismatchReasons,
+                  autoImprovementHints: match.improvementHints,
+                }
+              : r;
+          }),
+        );
+      }
+
+      if (success.finalPrompt && success.finalPrompt !== systemPrompt) {
+        const score = aggregateFeedbackForVersion(testRuns, promptVersionId);
+        setVersionHistory((h) => [
+          ...h,
+          {
+            id: promptVersionId,
+            prompt: systemPrompt,
+            createdAt: new Date(),
+            score,
+          },
+        ]);
+        setSystemPrompt(success.finalPrompt);
+        setPromptVersionId(crypto.randomUUID());
+      }
+
+      setAutomationState("stopped");
+      setPhase("manual_refine");
+    } catch (e) {
+      if ((e as Error).name === "AbortError") {
+        setAutoStatus("Auto-refine cancelled by user.");
+      } else {
+        setAutoError(e instanceof Error ? e.message : "Network error");
+      }
+      setAutomationState("stopped");
+      setPhase("manual_refine");
+    } finally {
+      setAutoAbortController(null);
+    }
+  }, [
+    maxIterations,
+    promptVersionId,
+    systemPrompt,
+    taskDescription,
+    testRuns,
+    threshold,
+  ]);
+
+  const handleStopAutoRefine = useCallback(() => {
+    autoAbortController?.abort();
+    setAutomationState("stopped");
+    setPhase("manual_refine");
+  }, [autoAbortController]);
 
   const handleRestoreVersion = useCallback((version: PromptVersion) => {
     setSystemPrompt(version.prompt);
@@ -367,9 +512,83 @@ export function PromptRefinerApp() {
         />
 
         <div className="flex flex-col gap-2">
+          <div className="rounded-lg border border-zinc-700 bg-zinc-900/70 p-3">
+            <p className="text-sm font-semibold text-zinc-200">Auto-refine bootstrap</p>
+            <p className="mb-3 mt-1 text-xs text-zinc-400">
+              Let AI compare actual vs expected output and iterate prompt fixes until
+              quality is close enough, then continue with manual feedback.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs text-zinc-400">
+                Threshold
+                <input
+                  type="number"
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  value={threshold}
+                  onChange={(e) => setThreshold(Number(e.target.value))}
+                  disabled={automationState === "running"}
+                  className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100"
+                />
+              </label>
+              <label className="text-xs text-zinc-400">
+                Max iterations
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={maxIterations}
+                  onChange={(e) => setMaxIterations(Number(e.target.value))}
+                  disabled={automationState === "running"}
+                  className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100"
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleStartAutoRefine}
+                disabled={
+                  automationState === "running" ||
+                  !hasExpectedRuns ||
+                  !systemPrompt.trim() ||
+                  !taskDescription.trim()
+                }
+                className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Start auto-refine
+              </button>
+              <button
+                type="button"
+                onClick={handleStopAutoRefine}
+                disabled={automationState !== "running"}
+                className="rounded border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Stop
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-zinc-400">
+              Phase:{" "}
+              <span className="font-medium text-zinc-300">
+                {phase === "auto_critic" ? "auto_critic" : "manual_refine"}
+              </span>{" "}
+              • State:{" "}
+              <span className="font-medium text-zinc-300">{automationState}</span>
+            </p>
+            {autoIteration > 0 ? (
+              <p className="mt-1 text-xs text-zinc-400">
+                Iterations: {autoIteration} • Score trend:{" "}
+                {autoScoreTrend.map((s) => `${(s * 100).toFixed(0)}%`).join(" → ")}
+              </p>
+            ) : null}
+            {autoStatus ? <p className="mt-1 text-xs text-indigo-300">{autoStatus}</p> : null}
+            {autoError ? <p className="mt-1 text-xs text-rose-400">{autoError}</p> : null}
+          </div>
           <button
             type="button"
-            disabled={!hasSubmittedFeedback || refineLoading}
+            disabled={!hasSubmittedFeedback || refineLoading || automationState === "running"}
             onClick={handleGetSuggestion}
             className="rounded-lg border border-zinc-600 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
           >

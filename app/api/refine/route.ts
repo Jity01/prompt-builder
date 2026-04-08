@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import type { RefineFeedbackItem } from "@/lib/types";
 
 const META_SYSTEM = `You are a prompt engineering assistant. The user is refining an LLM system prompt using test outputs and ratings.
 
@@ -33,13 +34,7 @@ export async function POST(req: Request) {
 
   let body: {
     currentPrompt?: string;
-    feedback?: {
-      input: string;
-      output: string;
-      expectedOutput?: string;
-      rating: "good" | "bad";
-      reason: string;
-    }[];
+    feedback?: RefineFeedbackItem[];
   };
   try {
     body = await req.json();

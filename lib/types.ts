@@ -26,6 +26,12 @@ export type TestRun = {
   };
   /** True after user submits thumbs + reason */
   feedbackSubmitted?: boolean;
+  /** Auto-critic similarity score for the latest evaluation cycle */
+  autoScore?: number;
+  /** Auto-critic mismatch reasons for this run */
+  autoMismatchReasons?: string[];
+  /** Auto-critic prompt-improvement hints for this run */
+  autoImprovementHints?: string[];
   loading?: boolean;
   error?: string;
 };
@@ -47,3 +53,46 @@ export type RefineApiResponse = {
   explanation: string;
   diffs: DiffChunk[];
 };
+
+export type RefineFeedbackItem = {
+  input: string;
+  output: string;
+  expectedOutput?: string;
+  rating: "good" | "bad";
+  reason: string;
+};
+
+export type AutoCriticRunFeedback = {
+  input: string;
+  output: string;
+  expectedOutput: string;
+  score: number;
+  mismatchReasons: string[];
+  improvementHints: string[];
+};
+
+export type AutoCriticEvaluation = {
+  aggregateScore: number;
+  summary: string;
+  runs: AutoCriticRunFeedback[];
+};
+
+export type AutoRefineIteration = {
+  iteration: number;
+  aggregateScore: number;
+  summary: string;
+  runFeedback: AutoCriticRunFeedback[];
+  refineExplanation: string;
+};
+
+export type AutoRefineStatus = "threshold_met" | "max_iterations" | "cancelled";
+
+export type AutoRefineResponse = {
+  status: AutoRefineStatus;
+  finalPrompt: string;
+  finalScore: number;
+  iterations: AutoRefineIteration[];
+};
+
+export type PromptRefinePhase = "auto_critic" | "manual_refine";
+export type AutomationState = "idle" | "running" | "stopped";

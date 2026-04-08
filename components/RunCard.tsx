@@ -75,6 +75,21 @@ export function RunCard({ run, onSubmitFeedback }: RunCardProps) {
         )}
       </div>
 
+      {typeof run.autoScore === "number" ? (
+        <div className="mb-3 rounded border border-indigo-800/70 bg-indigo-950/20 p-2 text-xs text-indigo-100">
+          <p className="font-medium">
+            Auto-critic score: {(run.autoScore * 100).toFixed(0)}%
+          </p>
+          {run.autoMismatchReasons && run.autoMismatchReasons.length > 0 ? (
+            <ul className="mt-1 list-disc pl-4 text-indigo-200">
+              {run.autoMismatchReasons.slice(0, 3).map((reason, idx) => (
+                <li key={`${run.id}-mismatch-${idx}`}>{reason}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
       {canRate && !submitted && (
         <fieldset className="mt-3 border-t border-zinc-800 pt-3">
           <legend className="text-sm font-semibold text-zinc-200">Feedback</legend>
