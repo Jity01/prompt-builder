@@ -51,8 +51,19 @@ export function RunCard({ run, onSubmitFeedback }: RunCardProps) {
         {run.input}
       </pre>
 
+      {run.expectedOutput ? (
+        <>
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Expected output
+          </div>
+          <pre className="mb-3 whitespace-pre-wrap rounded border border-zinc-800 bg-zinc-950/80 p-2 text-sm text-zinc-300">
+            {run.expectedOutput}
+          </pre>
+        </>
+      ) : null}
+
       <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-        Output
+        Model output
       </div>
       <div className="prose prose-invert prose-sm mb-3 max-w-none">
         {run.loading ? (

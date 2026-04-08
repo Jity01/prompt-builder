@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 
 const META_SYSTEM = `You are a prompt engineering assistant. The user is refining an LLM system prompt using test outputs and ratings.
 
-You will receive JSON in the user message with keys: currentPrompt, feedback (array of { input, output, rating, reason }).
+You will receive JSON in the user message with keys: currentPrompt, feedback (array of { input, output, expectedOutput?, rating, reason }).
 
-The user's goals and constraints should be inferred from the current system prompt text and from the test feedback (what worked vs what failed).
+expectedOutput is the user's exemplar for that input when provided; use it to judge whether the model matched the desired answer. Infer goals from the system prompt, exemplars, and feedback (what worked vs what failed).
 
 Your job:
 1. Identify what the prompt is getting wrong based on the bad feedback (and preserve what works from good feedback).
@@ -36,6 +36,7 @@ export async function POST(req: Request) {
     feedback?: {
       input: string;
       output: string;
+      expectedOutput?: string;
       rating: "good" | "bad";
       reason: string;
     }[];

@@ -1,6 +1,9 @@
 export type TestInputRow = {
   id: string;
+  /** User message sent to the model for this row */
   value: string;
+  /** Desired output for this input (exemplar) */
+  expectedOutput: string;
 };
 
 export type PromptVersion = {
@@ -14,6 +17,8 @@ export type TestRun = {
   id: string;
   promptVersionId: string;
   input: string;
+  /** Exemplar output from the example row (optional if user left it blank) */
+  expectedOutput?: string;
   output: string;
   feedback?: {
     rating: "good" | "bad";

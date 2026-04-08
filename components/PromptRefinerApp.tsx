@@ -13,14 +13,23 @@ import type {
   TestRun,
 } from "@/lib/types";
 
+const EXAMPLE_TASK =
+  "Answer science questions briefly and accurately; use plain language.";
 const EXAMPLE_PROMPT =
   "You are a helpful assistant. Answer briefly in bullet points. Stay factual; say when unsure.";
 const EXAMPLE_INPUT = "What causes rainbows?";
+const EXAMPLE_EXPECTED =
+  "Sunlight enters water droplets; light refracts, reflects inside the droplet, and disperses into colors we see as an arc.";
+
+function emptyRow(): TestInputRow {
+  return { id: crypto.randomUUID(), value: "", expectedOutput: "" };
+}
 
 export function PromptRefinerApp() {
+  const [taskDescription, setTaskDescription] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [testInputs, setTestInputs] = useState<TestInputRow[]>(() => [
-    { id: crypto.randomUUID(), value: "" },
+    emptyRow(),
   ]);
   const [promptVersionId, setPromptVersionId] = useState(() =>
     crypto.randomUUID(),
@@ -32,9 +41,19 @@ export function PromptRefinerApp() {
   );
   const [refineLoading, setRefineLoading] = useState(false);
   const [refineError, setRefineError] = useState<string | null>(null);
+  const [generateLoading, setGenerateLoading] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const runAllDisabled =
     !systemPrompt.trim() || !testInputs.some((i) => i.value.trim());
+
+  const generateDisabled = useMemo(() => {
+    const taskOk = taskDescription.trim().length > 0;
+    const hasCompletePair = testInputs.some(
+      (r) => r.value.trim() && r.expectedOutput.trim(),
+    );
+    return !taskOk || !hasCompletePair;
+  }, [taskDescription, testInputs]);
 
   const hasSubmittedFeedback = useMemo(
     () => testRuns.some((r) => r.feedbackSubmitted),
@@ -44,7 +63,8 @@ export function PromptRefinerApp() {
   const showEmptyHint =
     testRuns.length === 0 &&
     !systemPrompt.trim() &&
-    testInputs.every((t) => !t.value.trim());
+    !taskDescription.trim() &&
+    testInputs.every((t) => !t.value.trim() && !t.expectedOutput.trim());
 
   const handleTestInputChange = useCallback((index: number, value: string) => {
     setTestInputs((rows) => {
@@ -56,8 +76,21 @@ export function PromptRefinerApp() {
     });
   }, []);
 
+  const handleExpectedOutputChange = useCallback(
+    (index: number, value: string) => {
+      setTestInputs((rows) => {
+        const next = [...rows];
+        const row = next[index];
+        if (!row) return rows;
+        next[index] = { ...row, expectedOutput: value };
+        return next;
+      });
+    },
+    [],
+  );
+
   const handleAddInput = useCallback(() => {
-    setTestInputs((rows) => [...rows, { id: crypto.randomUUID(), value: "" }]);
+    setTestInputs((rows) => [...rows, emptyRow()]);
   }, []);
 
   const handleRemoveTestInput = useCallback((index: number) => {
@@ -67,15 +100,52 @@ export function PromptRefinerApp() {
     });
   }, []);
 
+  const handleGenerateSystemPrompt = useCallback(async () => {
+    if (generateDisabled) return;
+    const examples = testInputs
+      .map((r) => ({
+        input: r.value.trim(),
+        expectedOutput: r.expectedOutput.trim(),
+      }))
+      .filter((e) => e.input && e.expectedOutput);
+    if (!taskDescription.trim() || examples.length === 0) return;
+
+    setGenerateLoading(true);
+    setGenerateError(null);
+    try {
+      const res = await fetch("/api/generate-system-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskDescription: taskDescription.trim(),
+          examples,
+        }),
+      });
+      const data = (await res.json()) as { systemPrompt?: string; error?: string };
+      if (!res.ok) {
+        setGenerateError(data.error ?? `Generate failed (${res.status})`);
+        return;
+      }
+      if (data.systemPrompt) {
+        setSystemPrompt(data.systemPrompt);
+      }
+    } catch (e) {
+      setGenerateError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setGenerateLoading(false);
+    }
+  }, [generateDisabled, taskDescription, testInputs]);
+
   const handleRunAll = useCallback(async () => {
-    const inputs = testInputs.map((s) => s.value.trim()).filter(Boolean);
-    if (!systemPrompt.trim() || inputs.length === 0) return;
+    const rowsToRun = testInputs.filter((s) => s.value.trim());
+    if (!systemPrompt.trim() || rowsToRun.length === 0) return;
 
     const versionId = promptVersionId;
-    const initialRuns: TestRun[] = inputs.map((input) => ({
+    const initialRuns: TestRun[] = rowsToRun.map((row) => ({
       id: crypto.randomUUID(),
       promptVersionId: versionId,
-      input,
+      input: row.value.trim(),
+      expectedOutput: row.expectedOutput.trim() || undefined,
       output: "",
       loading: true,
     }));
@@ -140,12 +210,18 @@ export function PromptRefinerApp() {
   const handleGetSuggestion = useCallback(async () => {
     const feedback = testRuns
       .filter((r) => r.feedbackSubmitted && r.feedback)
-      .map((r) => ({
-        input: r.input,
-        output: r.output,
-        rating: r.feedback!.rating,
-        reason: r.feedback!.reason,
-      }));
+      .map((r) => {
+        const base = {
+          input: r.input,
+          output: r.output,
+          rating: r.feedback!.rating,
+          reason: r.feedback!.reason,
+        };
+        const ex = r.expectedOutput?.trim();
+        return ex
+          ? { ...base, expectedOutput: ex }
+          : base;
+      });
     if (feedback.length === 0) return;
 
     setRefineLoading(true);
@@ -202,24 +278,35 @@ export function PromptRefinerApp() {
   }, []);
 
   const fillExample = useCallback(() => {
+    setTaskDescription(EXAMPLE_TASK);
     setSystemPrompt(EXAMPLE_PROMPT);
-    setTestInputs([{ id: crypto.randomUUID(), value: EXAMPLE_INPUT }]);
+    setTestInputs([
+      {
+        id: crypto.randomUUID(),
+        value: EXAMPLE_INPUT,
+        expectedOutput: EXAMPLE_EXPECTED,
+      },
+    ]);
   }, []);
 
   const emptyStateSlot = showEmptyHint ? (
     <div className="rounded-lg border border-dashed border-zinc-600 bg-zinc-900/50 p-4 text-sm text-zinc-400">
       <p className="mb-2 font-medium text-zinc-300">Get started</p>
-      <p className="mb-3">
-        Example system prompt:{" "}
-        <span className="font-mono text-xs text-zinc-300">
-          {EXAMPLE_PROMPT}
-        </span>
+      <p className="mb-2">
+        Add a short task, one or more input/expected-output pairs, then{" "}
+        <strong className="text-zinc-300">Generate base system prompt</strong>.
+        Edit the draft, <strong className="text-zinc-300">Run all</strong>, rate
+        outputs, and use <strong className="text-zinc-300">Get suggestion</strong>{" "}
+        to refine.
       </p>
-      <p className="mb-3">
-        Example input:{" "}
-        <span className="font-mono text-xs text-zinc-300">
-          {EXAMPLE_INPUT}
-        </span>
+      <p className="mb-1 text-xs text-zinc-500">Example task</p>
+      <p className="mb-3 font-mono text-xs text-zinc-300">{EXAMPLE_TASK}</p>
+      <p className="mb-1 text-xs text-zinc-500">Example pair</p>
+      <p className="mb-1 font-mono text-xs text-zinc-300">
+        In: {EXAMPLE_INPUT}
+      </p>
+      <p className="mb-3 font-mono text-xs text-zinc-300">
+        Out: {EXAMPLE_EXPECTED}
       </p>
       <button
         type="button"
@@ -239,17 +326,24 @@ export function PromptRefinerApp() {
             Prompt Refiner
           </h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Run sample inputs, rate outputs, then get a targeted prompt update.
+            Define examples, draft a system prompt, then run, rate, and refine.
           </p>
         </header>
 
         <PromptEditor
+          taskDescription={taskDescription}
+          onTaskDescriptionChange={setTaskDescription}
           systemPrompt={systemPrompt}
           onSystemPromptChange={setSystemPrompt}
           testInputs={testInputs}
           onTestInputChange={handleTestInputChange}
+          onExpectedOutputChange={handleExpectedOutputChange}
           onAddInput={handleAddInput}
           onRemoveTestInput={handleRemoveTestInput}
+          onGenerateSystemPrompt={handleGenerateSystemPrompt}
+          generateDisabled={generateDisabled}
+          generateLoading={generateLoading}
+          generateError={generateError}
           onRunAll={handleRunAll}
           runAllDisabled={runAllDisabled}
           emptyStateSlot={emptyStateSlot}

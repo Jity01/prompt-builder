@@ -16,7 +16,7 @@ export function TestRunner({ runs, onSubmitFeedback }: TestRunnerProps) {
   if (runs.length === 0) {
     return (
       <p className="text-sm text-zinc-500">
-        Run all test inputs to see outputs here.
+        Run all to see model outputs next to your expected outputs.
       </p>
     );
   }
