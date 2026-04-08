@@ -1,11 +1,14 @@
 "use client";
 
+import type { TestInputRow } from "@/lib/types";
+
 type PromptEditorProps = {
   systemPrompt: string;
   onSystemPromptChange: (v: string) => void;
-  testInputs: string[];
+  testInputs: TestInputRow[];
   onTestInputChange: (index: number, value: string) => void;
   onAddInput: () => void;
+  onRemoveTestInput: (index: number) => void;
   onRunAll: () => void;
   runAllDisabled: boolean;
   emptyStateSlot?: React.ReactNode;
@@ -17,10 +20,13 @@ export function PromptEditor({
   testInputs,
   onTestInputChange,
   onAddInput,
+  onRemoveTestInput,
   onRunAll,
   runAllDisabled,
   emptyStateSlot,
 }: PromptEditorProps) {
+  const canRemoveRow = testInputs.length > 1;
+
   return (
     <div className="flex flex-col gap-4">
       {emptyStateSlot}
@@ -50,15 +56,26 @@ export function PromptEditor({
           </button>
         </div>
         <div className="flex flex-col gap-2">
-          {testInputs.map((value, index) => (
-            <input
-              key={index}
-              type="text"
-              value={value}
-              onChange={(e) => onTestInputChange(index, e.target.value)}
-              placeholder={`Input ${index + 1}`}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
-            />
+          {testInputs.map((row, index) => (
+            <div key={row.id} className="flex items-start gap-2">
+              <textarea
+                value={row.value}
+                onChange={(e) => onTestInputChange(index, e.target.value)}
+                placeholder={`Input ${index + 1}`}
+                rows={3}
+                className="min-h-[4.5rem] w-full flex-1 resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
+              />
+              {canRemoveRow ? (
+                <button
+                  type="button"
+                  onClick={() => onRemoveTestInput(index)}
+                  className="shrink-0 rounded-lg border border-zinc-600 px-2.5 py-1.5 text-sm leading-none text-zinc-400 hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+                  aria-label={`Remove test input ${index + 1}`}
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
           ))}
         </div>
       </div>

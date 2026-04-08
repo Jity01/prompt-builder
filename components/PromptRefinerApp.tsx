@@ -6,7 +6,12 @@ import { PromptEditor } from "@/components/PromptEditor";
 import { TestRunner } from "@/components/TestRunner";
 import { VersionHistory } from "@/components/VersionHistory";
 import { aggregateFeedbackForVersion } from "@/lib/score";
-import type { PromptVersion, RefineApiResponse, TestRun } from "@/lib/types";
+import type {
+  PromptVersion,
+  RefineApiResponse,
+  TestInputRow,
+  TestRun,
+} from "@/lib/types";
 
 const EXAMPLE_PROMPT =
   "You are a helpful assistant. Answer briefly in bullet points. Stay factual; say when unsure.";
@@ -14,7 +19,9 @@ const EXAMPLE_INPUT = "What causes rainbows?";
 
 export function PromptRefinerApp() {
   const [systemPrompt, setSystemPrompt] = useState("");
-  const [testInputs, setTestInputs] = useState<string[]>([""]);
+  const [testInputs, setTestInputs] = useState<TestInputRow[]>(() => [
+    { id: crypto.randomUUID(), value: "" },
+  ]);
   const [promptVersionId, setPromptVersionId] = useState(() =>
     crypto.randomUUID(),
   );
@@ -27,7 +34,7 @@ export function PromptRefinerApp() {
   const [refineError, setRefineError] = useState<string | null>(null);
 
   const runAllDisabled =
-    !systemPrompt.trim() || !testInputs.some((i) => i.trim());
+    !systemPrompt.trim() || !testInputs.some((i) => i.value.trim());
 
   const hasSubmittedFeedback = useMemo(
     () => testRuns.some((r) => r.feedbackSubmitted),
@@ -37,22 +44,31 @@ export function PromptRefinerApp() {
   const showEmptyHint =
     testRuns.length === 0 &&
     !systemPrompt.trim() &&
-    testInputs.every((t) => !t.trim());
+    testInputs.every((t) => !t.value.trim());
 
   const handleTestInputChange = useCallback((index: number, value: string) => {
     setTestInputs((rows) => {
       const next = [...rows];
-      next[index] = value;
+      const row = next[index];
+      if (!row) return rows;
+      next[index] = { ...row, value };
       return next;
     });
   }, []);
 
   const handleAddInput = useCallback(() => {
-    setTestInputs((rows) => [...rows, ""]);
+    setTestInputs((rows) => [...rows, { id: crypto.randomUUID(), value: "" }]);
+  }, []);
+
+  const handleRemoveTestInput = useCallback((index: number) => {
+    setTestInputs((rows) => {
+      if (rows.length <= 1) return rows;
+      return rows.filter((_, i) => i !== index);
+    });
   }, []);
 
   const handleRunAll = useCallback(async () => {
-    const inputs = testInputs.map((s) => s.trim()).filter(Boolean);
+    const inputs = testInputs.map((s) => s.value.trim()).filter(Boolean);
     if (!systemPrompt.trim() || inputs.length === 0) return;
 
     const versionId = promptVersionId;
@@ -187,7 +203,7 @@ export function PromptRefinerApp() {
 
   const fillExample = useCallback(() => {
     setSystemPrompt(EXAMPLE_PROMPT);
-    setTestInputs([EXAMPLE_INPUT]);
+    setTestInputs([{ id: crypto.randomUUID(), value: EXAMPLE_INPUT }]);
   }, []);
 
   const emptyStateSlot = showEmptyHint ? (
@@ -233,6 +249,7 @@ export function PromptRefinerApp() {
           testInputs={testInputs}
           onTestInputChange={handleTestInputChange}
           onAddInput={handleAddInput}
+          onRemoveTestInput={handleRemoveTestInput}
           onRunAll={handleRunAll}
           runAllDisabled={runAllDisabled}
           emptyStateSlot={emptyStateSlot}

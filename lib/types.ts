@@ -1,3 +1,8 @@
+export type TestInputRow = {
+  id: string;
+  value: string;
+};
+
 export type PromptVersion = {
   id: string;
   prompt: string;
