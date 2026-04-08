@@ -1,3 +1,5 @@
+import type { SupportedModel } from "@/lib/model-config";
+
 export type TestInputRow = {
   id: string;
   /** User message sent to the model for this row */
@@ -60,6 +62,18 @@ export type RefineFeedbackItem = {
   expectedOutput?: string;
   rating: "good" | "bad";
   reason: string;
+};
+
+export type RunRequestBody = {
+  systemPrompt?: string;
+  input?: string;
+  model?: SupportedModel;
+};
+
+export type RefineRequestBody = {
+  currentPrompt?: string;
+  feedback?: RefineFeedbackItem[];
+  model?: SupportedModel;
 };
 
 export type AutoCriticRunFeedback = {

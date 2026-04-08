@@ -1,6 +1,7 @@
 "use client";
 
 import type { TestInputRow } from "@/lib/types";
+import type { SupportedModel } from "@/lib/model-config";
 
 type PromptEditorProps = {
   taskDescription: string;
@@ -19,6 +20,10 @@ type PromptEditorProps = {
   onRunAll: () => void;
   runAllDisabled: boolean;
   emptyStateSlot?: React.ReactNode;
+  selectedModel: SupportedModel;
+  modelOptions: readonly SupportedModel[];
+  onModelChange: (v: SupportedModel) => void;
+  activeResultsModel: SupportedModel | null;
 };
 
 export function PromptEditor({
@@ -38,6 +43,10 @@ export function PromptEditor({
   onRunAll,
   runAllDisabled,
   emptyStateSlot,
+  selectedModel,
+  modelOptions,
+  onModelChange,
+  activeResultsModel,
 }: PromptEditorProps) {
   const canRemoveRow = testInputs.length > 1;
 
@@ -155,6 +164,30 @@ export function PromptEditor({
       >
         ▶ Run all
       </button>
+      <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
+          Model for generation and refinement
+        </label>
+        <select
+          value={selectedModel}
+          onChange={(e) => onModelChange(e.target.value as SupportedModel)}
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
+        >
+          {modelOptions.map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </select>
+        <p className="mt-2 text-xs text-zinc-400">
+          This model is used when you run test cases, auto-refine, and get prompt suggestions.
+        </p>
+        {activeResultsModel ? (
+          <p className="mt-1 text-xs text-zinc-300">
+            Active results model: <span className="font-medium">{activeResultsModel}</span>
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

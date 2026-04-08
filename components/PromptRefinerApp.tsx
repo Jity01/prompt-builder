@@ -5,6 +5,11 @@ import { DiffViewer } from "@/components/DiffViewer";
 import { PromptEditor } from "@/components/PromptEditor";
 import { TestRunner } from "@/components/TestRunner";
 import { VersionHistory } from "@/components/VersionHistory";
+import {
+  DEFAULT_MODEL,
+  SUPPORTED_MODELS,
+  type SupportedModel,
+} from "@/lib/model-config";
 import { aggregateFeedbackForVersion } from "@/lib/score";
 import type {
   AutoRefineResponse,
@@ -56,6 +61,10 @@ export function PromptRefinerApp() {
   const [autoIteration, setAutoIteration] = useState(0);
   const [autoAbortController, setAutoAbortController] =
     useState<AbortController | null>(null);
+  const [selectedModel, setSelectedModel] =
+    useState<SupportedModel>(DEFAULT_MODEL);
+  const [activeResultsModel, setActiveResultsModel] =
+    useState<SupportedModel | null>(null);
 
   const runAllDisabled =
     !systemPrompt.trim() || !testInputs.some((i) => i.value.trim());
@@ -184,6 +193,7 @@ export function PromptRefinerApp() {
           body: JSON.stringify({
             systemPrompt,
             input: nextRuns[i].input,
+            model: selectedModel,
           }),
         });
         const data = (await res.json()) as { output?: string; error?: string };
@@ -209,7 +219,8 @@ export function PromptRefinerApp() {
       }
       setTestRuns([...nextRuns]);
     }
-  }, [promptVersionId, systemPrompt, testInputs]);
+    setActiveResultsModel(selectedModel);
+  }, [promptVersionId, selectedModel, systemPrompt, testInputs]);
 
   const handleSubmitFeedback = useCallback(
     (runId: string, rating: "good" | "bad", reason: string) => {
@@ -255,6 +266,7 @@ export function PromptRefinerApp() {
         body: JSON.stringify({
           currentPrompt: systemPrompt,
           feedback,
+          model: selectedModel,
         }),
       });
       const data = (await res.json()) as RefineApiResponse & { error?: string };
@@ -274,7 +286,7 @@ export function PromptRefinerApp() {
     } finally {
       setRefineLoading(false);
     }
-  }, [systemPrompt, testRuns]);
+  }, [selectedModel, systemPrompt, testRuns]);
 
   const handleApplyDiff = useCallback(() => {
     if (!refineResult) return;
@@ -324,6 +336,7 @@ export function PromptRefinerApp() {
           runs: runsForAuto,
           threshold,
           maxIterations,
+          model: selectedModel,
         }),
       });
       const data = (await res.json()) as
@@ -405,6 +418,7 @@ export function PromptRefinerApp() {
   }, [
     maxIterations,
     promptVersionId,
+    selectedModel,
     systemPrompt,
     taskDescription,
     testRuns,
@@ -492,6 +506,10 @@ export function PromptRefinerApp() {
           onRunAll={handleRunAll}
           runAllDisabled={runAllDisabled}
           emptyStateSlot={emptyStateSlot}
+          selectedModel={selectedModel}
+          modelOptions={SUPPORTED_MODELS}
+          onModelChange={setSelectedModel}
+          activeResultsModel={activeResultsModel}
         />
 
         <VersionHistory

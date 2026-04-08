@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import type { AutoCriticEvaluation, AutoRefineIteration, AutoRefineResponse } from "@/lib/types";
 import { resolveAutoRefineStatus, validateAutoRefineConfig } from "@/lib/auto-refine";
+import { isSupportedModel, type SupportedModel } from "@/lib/model-config";
 
 const EVALUATE_SYSTEM = `You are an evaluator for prompt quality.
 Given a task description and rows of (input, expectedOutput, actualOutput), assess how closely each actualOutput matches expectedOutput.
@@ -35,12 +36,13 @@ type RunRow = { input: string; output: string; expectedOutput: string };
 
 async function evaluate(
   client: OpenAI,
+  model: SupportedModel,
   taskDescription: string,
   runs: RunRow[],
 ): Promise<AutoCriticEvaluation> {
   const payload = JSON.stringify({ taskDescription, runs });
   const response = await client.chat.completions.create({
-    model: "gpt-4o",
+    model,
     messages: [
       { role: "system", content: EVALUATE_SYSTEM },
       { role: "user", content: payload },
@@ -73,6 +75,7 @@ async function evaluate(
 
 async function refineFromAutoFeedback(
   client: OpenAI,
+  model: SupportedModel,
   currentPrompt: string,
   evaluation: AutoCriticEvaluation,
 ): Promise<{ newPrompt: string; explanation: string }> {
@@ -91,7 +94,7 @@ async function refineFromAutoFeedback(
 
   const payload = JSON.stringify({ currentPrompt, feedback: autoFeedback });
   const response = await client.chat.completions.create({
-    model: "gpt-4o",
+    model,
     messages: [
       { role: "system", content: REFINE_SYSTEM },
       { role: "user", content: payload },
@@ -123,6 +126,7 @@ export async function POST(req: Request) {
     runs?: RunRow[];
     threshold?: number;
     maxIterations?: number;
+    model?: SupportedModel;
   };
   try {
     body = await req.json();
@@ -134,6 +138,7 @@ export async function POST(req: Request) {
   const currentPrompt = String(body.currentPrompt ?? "").trim();
   const threshold = Number(body.threshold ?? 0.8);
   const maxIterations = Number(body.maxIterations ?? 5);
+  const model = body.model;
   const runs = Array.isArray(body.runs)
     ? body.runs
         .map((r) => ({
@@ -150,6 +155,12 @@ export async function POST(req: Request) {
   if (runs.length === 0) {
     return NextResponse.json(
       { error: "At least one run with input and expectedOutput is required." },
+      { status: 400 },
+    );
+  }
+  if (!isSupportedModel(model)) {
+    return NextResponse.json(
+      { error: "model is required and must be one of the supported values." },
       { status: 400 },
     );
   }
@@ -170,7 +181,7 @@ export async function POST(req: Request) {
       const actualRuns: RunRow[] = [];
       for (const row of runs) {
         const runRes = await client.chat.completions.create({
-          model: "gpt-4o",
+          model,
           messages: [
             { role: "system", content: prompt },
             { role: "user", content: row.input },
@@ -183,7 +194,7 @@ export async function POST(req: Request) {
         });
       }
 
-      const evaluation = await evaluate(client, taskDescription, actualRuns);
+      const evaluation = await evaluate(client, model, taskDescription, actualRuns);
       finalScore = evaluation.aggregateScore;
 
       const maybeStatus = resolveAutoRefineStatus({
@@ -205,7 +216,7 @@ export async function POST(req: Request) {
         break;
       }
 
-      const refined = await refineFromAutoFeedback(client, prompt, evaluation);
+      const refined = await refineFromAutoFeedback(client, model, prompt, evaluation);
       prompt = refined.newPrompt;
       iterations.push({
         iteration: i,

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
-import type { RefineFeedbackItem } from "@/lib/types";
+import { isSupportedModel } from "@/lib/model-config";
+import type { RefineRequestBody } from "@/lib/types";
 
 const META_SYSTEM = `You are a prompt engineering assistant. The user is refining an LLM system prompt using test outputs and ratings.
 
@@ -20,7 +21,8 @@ Your job:
   ]
 }
 
-Only make the smallest change necessary. Preserve everything that's working.
+Make the change appropriate for the feedback. If the feedback is very enthusiastic, make the change just as large.
+
 Build diffs as a reasonable line-level sequence so the UI can color added (green) vs removed (red) vs unchanged.`;
 
 export async function POST(req: Request) {
@@ -32,10 +34,7 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: {
-    currentPrompt?: string;
-    feedback?: RefineFeedbackItem[];
-  };
+  let body: RefineRequestBody;
   try {
     body = await req.json();
   } catch {
@@ -44,8 +43,15 @@ export async function POST(req: Request) {
 
   const currentPrompt = body.currentPrompt ?? "";
   const feedback = Array.isArray(body.feedback) ? body.feedback : [];
+  const model = body.model;
   if (feedback.length === 0) {
     return NextResponse.json({ error: "At least one feedback item is required." }, { status: 400 });
+  }
+  if (!isSupportedModel(model)) {
+    return NextResponse.json(
+      { error: "model is required and must be one of the supported values." },
+      { status: 400 },
+    );
   }
 
   const client = new OpenAI({ apiKey: key });
@@ -57,7 +63,7 @@ export async function POST(req: Request) {
 
   try {
     const response = await client.chat.completions.create({
-      model: "gpt-4o",
+      model,
       messages: [
         { role: "system", content: META_SYSTEM },
         { role: "user", content: userPayload },
